@@ -8,9 +8,11 @@ This is not a mod manager. The idea is that you use the tools already in windows
 
 Put Bunduru76.ps1 somewhere.
 
-Hit Win+R and type in the following: `powershell.exe -ExecutionPolicy Bypass -File <path to>\Bunduru76.ps1 -Archive2 <path to>\Archive2\ -Mods <path to>\Mods\ -Game <path to>\Fallout76\ -Save`
+Right-click and run with powershell or hit Win+R and type in the following: `powershell.exe -ExecutionPolicy Bypass -File <path to>\Bunduru76.ps1`
 
 **Make sure to replace all the `<path to>` with real, actual paths to those folders** (see below for details)
+
+When run with no parameters, the script will prompt you for your folder locations and give you the opportunity to save a shortcut to save time later.
 
 ### Prerequisites
 
@@ -62,6 +64,8 @@ All folder parameters are required. Relative paths are ok if running from the co
 `-Save` - _Optional_ - If set, will generate a shortcut with the same settings and put it in your mod folder. You can copy or move it anywhere and it will still work (or rename it if you hate stupid jokes).
 
 `-Clean` - _Optional_ - If set, will delete the generated .unpacked folder after bundling.
+
+`-Interactive` - _Optional_ - If set, forces the folder selection dialogs, but will still default them to CLI parameters.
 
 
 ## How do I...

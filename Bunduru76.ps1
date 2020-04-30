@@ -33,6 +33,8 @@
     Save a shortcut in the mods folder to bundle these mods again.
 .PARAMETER Clean
     Remove unpacked files after bundling.
+.PARAMETER Interactive
+    Prompt for all inputs.
 .EXAMPLE
     C:\PS> .\path\to\bunduru76.ps1 -Archive2 .\path\to\Archive2\ -Mods .\path\to\Mods\ -Game .\path\to\Fallout76
     All parameters should be folders, Archive2 and Game parameters should be the directory that
@@ -42,50 +44,36 @@
 #>
 [CmdletBinding()]
 Param (
-    [Parameter(Mandatory=$True)]
-    [ValidateScript({ Test-Path -Path $_ -PathType Container -IsValid })]
     [string]$Archive2,
-
-    [Parameter(Mandatory=$True)]
-    [ValidateScript({ Test-Path -Path $_ -PathType Container -IsValid })]
     [string]$Mods,
-
-    [Parameter(Mandatory=$True)]
-    [ValidateScript({ Test-Path -Path $_ -PathType Container -IsValid })]
     [string]$Game,
-
+    [Alias('s')]
     [switch]$Save,
-    [switch]$Clean
+    [Alias('c')]
+    [switch]$Clean,
+    [Alias('i')]
+    [switch]$Interactive
 )
 
-# Normalize paths. Resolve-Path has a nice side effect of throwing a fit if the path doesn't exist
+# Constants
 
-$Archive2Path = Resolve-Path $Archive2
-$Archive2 = Resolve-Path "$Archive2Path\Archive2.exe"
-$Mods = Resolve-Path $Mods
-$Game = Resolve-Path $Game
-$Data = Resolve-Path "$Game\Data\"
-$Unpacked = "$($Mods).unpacked\"
-$Bundle = "$Data\Bunduru76_General.ba2"
-$BundleTex = "$Data\Bunduru76_Textures.ba2"
-
-$HasStrings = $False
-$HasTextures = $False
-
-# Constants and Helpers
-
-$IniFile = "$([Environment]::GetFolderPath("MyDocuments"))\My Games\Fallout 76\Fallout76Custom.ini"
-$LnkFile = "$($Mods)\Bunduru76.lnk"
-$Loosies = @('effects', 'interface', 'meshes', 'strings', 'terrain', 'textures')
 $ColorHead = 'White'
 $ColorCommand = 'Gray'
 $ColorNotice = 'Cyan'
 $ColorWarn = 'Red'
 $ColorError = 'Red'
+$Loosies = @('effects', 'interface', 'meshes', 'strings', 'terrain', 'textures')
+
+# Helpers
 
 function IsFolder($Path)
 {
-    return Test-Path -Path $Path -PathType Container -IsValid
+    return Test-Path -Path $Path -PathType Container
+}
+
+function IsFile($Path)
+{
+    return Test-Path -Path $Path -PathType Leaf
 }
 
 function IsBa2($Path)
@@ -96,8 +84,8 @@ function IsBa2($Path)
 
 function IsLoose($Path)
 {
-    $Path = [System.IO.Path]::GetFileName($Path)
-    return ($Loosies.Contains($Path.ToLower())) -And (IsFolder($Path))
+    $Name = [System.IO.Path]::GetFileName($Path)
+    return ($Loosies.Contains($Name.ToLower())) -And (IsFolder($Path))
 }
 
 function ModUnpack($Path)
@@ -116,26 +104,144 @@ function ModCopy($Path)
     Copy-Item -Path $Path -Destination $Unpacked -Recurse -Force
 }
 
+function GetFolder()
+{
+    Param (
+        [string]$Description = $Null,
+        [string]$Initial
+    )
 
-# Make sure Archive2 is really Archive2
+    [void] [System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms')
+    $FolderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog -Property @{
+        Description = $Description
+        SelectedPath = if ($Initial) { Resolve-Path $Initial } else { Resolve-Path '.\' }
+    }
+
+    $Response = $FolderBrowser.ShowDialog((New-Object System.Windows.Forms.Form -Property @{
+        TopMost = $true
+    }))
+
+    if ($Response -eq [Windows.Forms.DialogResult]::OK) {
+        return $FolderBrowser.SelectedPath
+    } else {
+        return $False
+    }
+}
+
+function GetConfirmation()
+{
+    Param (
+        [string]$Title = 'something',
+        [string]$Prompt = 'Are you sure you want to proceed?',
+        [string[]]$Choices = @('&Yes', '&No'),
+        [int]$Default = 0
+    )
+
+    $Response = $Host.UI.PromptForChoice($Title, $Prompt, $Choices, $Default)
+    return $Response -eq 0
+}
+
+function ResolvePathOrFail($Path)
+{
+    if (Test-Path -Path $Path) {
+        return Resolve-Path $Path
+    }
+    else {
+        throw ''
+    }
+}
+
+
+# Output some pre-amble
+
+Write-Host "`n--==[ Fallout 76 Mod Bunduru ]==--`n" -ForegroundColor $ColorHead
+
+Write-Debug "Parameters:"
+$PSBoundParameters | Format-Table | Out-String | Write-Debug
+
+
+# If we are missing any paths, we will need to ask nicely for them
+
+$SelectArchive2 = $Interactive -Or (-Not $PSBoundParameters.ContainsKey('Archive2'))
+$SelectMods = $Interactive -Or (-Not $PSBoundParameters.ContainsKey('Mods'))
+$SelectGame = $Interactive -Or (-Not $PSBoundParameters.ContainsKey('Game'))
+
+if ($SelectArchive2 -Or $SelectMods -Or $SelectGame) {
+    Write-Host '--> Interactive mode, please choose your folders...' -ForegroundColor $ColorNotice
+
+    if ($SelectArchive2) {
+        $Archive2 = GetFolder -Description 'Please select folder containing Archive2.exe' -Initial $Archive2
+    }
+    Write-Host "  Archive2   > $Archive2"
+
+    if ($SelectMods) {
+        $Mods = GetFolder -Description 'Please select Mods folder' -Initial $Mods
+    }
+    Write-Host "  Mods       > $Mods"
+
+    if ($SelectGame) {
+        $Game = GetFolder -Description 'Please select Fallout 76 folder' -Initial $Game
+    }
+    Write-Host "  Fallout 76 > $Game"
+
+    Write-Host "<-- Ok`n" -ForegroundColor $ColorNotice
+    $Interactive = $True # So the rest of the script knows a dialog was opened
+}
+
+
+# Check and normalize paths.
 
 try {
+    $Archive2Path = ResolvePathOrFail $Archive2
+    $Archive2 = ResolvePathOrFail "$Archive2Path\Archive2.exe"
+
+    # Make sure Archive2 is really Archive2
     $Output = (& $Archive2 -?) | Out-String
     if (-Not ($Output -match 'Archive2 <archive, files\/folders>')) { throw '' }
 } catch {
-    Write-Host "Supplied Archive2.exe path does not appear to be valid: $Archive2" -ForegroundColor $ColorError
+    Write-Host "Archive2.exe path does not appear to be valid, please check your paths."
     Exit 1
 }
 
+try {
+    $Mods = ResolvePathOrFail $Mods
+} catch {
+    Write-Host "Mod folder does not appear valid, please check your paths."
+    Exit 1
+}
+
+try {
+    $Game = ResolvePathOrFail $Game
+    $Data = ResolvePathOrFail "$Game\Data\"
+} catch {
+    Write-Host "Fallout 76 Data folder does not appear to be valid, please check your paths."
+    Exit 1
+}
+
+
+# Computed values we need for later
+
+$Unpacked = "$Mods\.unpacked\"
+$Bundle = "$Data\Bunduru76_General.ba2"
+$BundleTex = "$Data\Bunduru76_Textures.ba2"
+
+$LnkFile = "$($Mods)\Bunduru76.lnk"
+$IniFile = "$([Environment]::GetFolderPath("MyDocuments"))\My Games\Fallout 76\Fallout76Custom.ini"
+
+$HasStrings = $False
+$HasTextures = $False
+
+
 # All good probably. Let's do this!
 
-Write-Host "`n--==[ Fallout 76 Mod Bunduru ]==--" -ForegroundColor $ColorHead
+Write-Host " Ready to go with the following paths:"
 Write-Host "  Archive2   > $Archive2"
 Write-Host "  Mods       > $Mods"
-# Write-Host "  Unpacked   > $Unpacked"
+Write-Verbose "  Unpacked   > $Unpacked"
 Write-Host "  Fallout 76 > $Game"
-# Write-Host "  Data       > $Data"
+Write-Verbose "  Data       > $Data"
 Write-Host ""
+
 
 # Clear staging folder
 
@@ -143,15 +249,14 @@ Remove-Item -ErrorAction Ignore -Recurse -Force $Unpacked | Out-String | Write-V
 New-Item -ItemType Directory -Force -Path $Unpacked | Out-String | Write-Verbose
 $Unpacked = Resolve-Path $Unpacked
 
+
 # Loop through each source, look for special directories or ba2, put them all in the staging folder
 
 Write-Host "--> Getting mods from $($Mods)..." -ForegroundColor $ColorNotice
 
 $Sources = Get-ChildItem $Mods -Exclude .*,_* | Sort-Object
-Foreach ($Source in $Sources) {
-    # $SourceName = [System.IO.Path]::GetFileName($Source)
-    # Write-Host "  Checking `"$SourceName`""
-
+$Sources | Format-Table | Out-String | Write-Debug
+foreach ($Source in $Sources) {
     if (IsLoose($Source)) {
         ModCopy($Source)
     }
@@ -160,7 +265,8 @@ Foreach ($Source in $Sources) {
     }
     elseif (IsFolder($Source)) {
         $SourcesSub = Get-ChildItem $Source -Exclude .*,_* | Sort-Object
-        Foreach ($Sub in $SourcesSub) {
+        $SourcesSub | Format-Table | Out-String | Write-Debug
+        foreach ($Sub in $SourcesSub) {
             if (IsLoose($Sub)) {
                 ModCopy($Sub)
             }
@@ -170,22 +276,24 @@ Foreach ($Source in $Sources) {
         }
     }
     else {
-        Write-Host "$Source does not look like a mod, please check..." -ForegroundColor $ColorWarn
+        Write-Verbose "$Source does not look like a mod, skipping..."
     }
 }
 
 Write-Host "<-- Done Unpacking`n" -ForegroundColor $ColorNotice
 
+
 # Normalize directory names
 
 $Sources = Get-ChildItem $Unpacked -Include *
-Foreach ($Source in $Sources) {
+foreach ($Source in $Sources) {
     $Name = [System.IO.Path]::GetFileName($Source)
     if ((IsLoose($Source)) -And ($Name -cne $Name.ToLower())) {
         Rename-Item -Path "$Source" -NewName "$($Source)_"
         Rename-Item -Path "$($Source)_" -NewName "$($Name.ToLower())"
     }
 }
+
 
 # Pack them up!
 
@@ -194,7 +302,7 @@ Write-Host "--> Packing mods to $($Data)..." -ForegroundColor $ColorNotice
 # Strings need to be loaded loose
 
 try {
-    $UnpackedStrings = Resolve-Path "$Unpacked\strings" # will fail if no strings
+    $UnpackedStrings = ResolvePathOrFail "$Unpacked\strings"
     $HasStrings = $True
     Write-Host " > Copying loose strings" -ForegroundColor $ColorCommand
     Copy-Item -Path $UnpackedStrings -Destination $Data -Recurse -Force
@@ -205,7 +313,7 @@ try {
 # Textures need to be packed as DDS
 
 try {
-    $UnpackedTextures = Resolve-Path "$Unpacked\textures" # will fail if no textures
+    $UnpackedTextures = ResolvePathOrFail "$Unpacked\textures"
     $HasTextures = $True
     Remove-Item -ErrorAction Ignore -Force "$BundleTex" | Out-String | Write-Verbose
     Write-Host " > Packing textures" -ForegroundColor $ColorCommand
@@ -219,7 +327,7 @@ try {
 Remove-Item -ErrorAction Ignore -Force "$Bundle" | Out-String | Write-Verbose
 
 $Sources = Get-ChildItem $Unpacked -Exclude strings,textures | Sort-Object
-Foreach ($Source in $Sources) {
+foreach ($Source in $Sources) {
     $Name = [System.IO.Path]::GetFileName($Source)
     Write-Host " > Packing $Name" -ForegroundColor $ColorCommand
 }
@@ -230,6 +338,7 @@ $Sources = '"{0}"' -f ($Sources -join '","')
 
 Write-Host "<-- Done Packing`n" -ForegroundColor $ColorNotice
 
+
 # Clean up if desired
 
 if ($Clean) {
@@ -238,7 +347,13 @@ if ($Clean) {
     Write-Host "<-- Ok`n" -ForegroundColor $ColorNotice
 }
 
+
 # Create a shortcut with the absolute paths so these settings are saved
+
+if ($Interactive -And (-Not $Save)) {
+    # Since it was interactive mode, ask the user if they want a shortbutt
+    $Save = GetConfirmation -Title 'Save Shortcut?' -Prompt 'Would you like to save a shortcut in your mods folder to make this bundle easier next time?'
+}
 
 if ($Save) {
     Write-Host "--> Saving a shortcut with these settings:" -ForegroundColor $ColorNotice
@@ -263,7 +378,8 @@ if ($Save) {
     Write-Host "<-- Ok`n" -ForegroundColor $ColorNotice
 }
 
-# Be helpful!
+
+# Give helpful advice
 
 $IniContent = ''
 if (Test-Path $IniFile) {
@@ -296,7 +412,7 @@ if ($NeedsIni -Or $NeedsIniTextures -Or $NeedsIniStrings) {
 
 
     $Response = Read-Host -Prompt 'Type "open" or "Y" to do it now or enter to exit'
-    if ($Response -match 'open|y') {
+    if ($Response -match '^open|y') {
         notepad.exe $IniFile
         Read-Host -Prompt "Press Enter to close"
     }
