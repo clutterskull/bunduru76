@@ -359,19 +359,30 @@ if ($Save) {
     Write-Host "--> Saving a shortcut with these settings:" -ForegroundColor $ColorNotice
     Write-Host " > $($LnkFile -replace '\\+', '\')"
 
-    $File = Resolve-Path "$PSScriptRoot\$($MyInvocation.MyCommand.Name)"
-    $Arguments = @(
-        "-ExecutionPolicy Bypass",
-        "-File $File",
-        "-Archive2 $Archive2Path",
-        "-Mods $Mods",
-        "-Game $Game",
-        $(if ($Clean) {'-Clean'} else {''})
-    ) -join ' '
+    $TargetPath = [Environment]::GetCommandLineArgs()[0]
+
+    if ($TargetPath -match 'powershell\.exe') {
+        $File = Resolve-Path "$PSScriptRoot\$($MyInvocation.MyCommand.Name)"
+        $Arguments = @(
+            "-ExecutionPolicy Bypass",
+            "-File $File",
+            "-Archive2 $Archive2Path",
+            "-Mods $Mods",
+            "-Game $Game",
+            $(if ($Clean) {'-Clean'} else {''})
+        ) -join ' '
+    } else {
+        $Arguments = @(
+            "-Archive2 $Archive2Path",
+            "-Mods $Mods",
+            "-Game $Game",
+            $(if ($Clean) {'-Clean'} else {''})
+        ) -join ' '
+    }
 
     $WshShell = New-Object -comObject WScript.Shell
     $Shortcut = $WshShell.CreateShortcut($LnkFile)
-    $Shortcut.TargetPath = "powershell.exe"
+    $Shortcut.TargetPath = $TargetPath
     $Shortcut.Arguments = $Arguments
     $Shortcut.Save()
 
