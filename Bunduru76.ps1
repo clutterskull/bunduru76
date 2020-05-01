@@ -55,14 +55,28 @@ Param (
     [switch]$Interactive
 )
 
-# Constants
+# Colors
 
 $ColorHead = 'White'
 $ColorCommand = 'Gray'
 $ColorNotice = 'Cyan'
 $ColorWarn = 'Red'
 $ColorError = 'Red'
+
+# Script globals
+
 $Loosies = @('effects', 'interface', 'meshes', 'strings', 'terrain', 'textures')
+
+$Unpacked = $Null
+$Bundle = $Null
+$BundleTex = $Null
+
+$LnkFile = $Null
+$IniFile = $Null
+
+$HasStrings = $False
+$HasTextures = $False
+
 
 # Helpers
 
@@ -228,9 +242,6 @@ $BundleTex = "$Data\Bunduru76_Textures.ba2"
 $LnkFile = "$($Mods)\Bunduru76.lnk"
 $IniFile = "$([Environment]::GetFolderPath("MyDocuments"))\My Games\Fallout 76\Fallout76Custom.ini"
 
-$HasStrings = $False
-$HasTextures = $False
-
 
 # All good probably. Let's do this!
 
@@ -247,7 +258,11 @@ Write-Host ""
 
 Remove-Item -ErrorAction Ignore -Recurse -Force $Unpacked | Out-String | Write-Verbose
 New-Item -ItemType Directory -Force -Path $Unpacked | Out-String | Write-Verbose
-$Unpacked = Resolve-Path $Unpacked
+
+# Archive2 will throw a fit if extract or root paths are not normalized
+# Also will throw a fit if there is a trailing backslash in a path that contains spaces because
+# it will internally qupte and the backslash will cause the closing quote to become a literal
+$Unpacked = "$(Resolve-Path $Unpacked)".Trim('\')
 
 
 # Loop through each source, look for special directories or ba2, put them all in the staging folder
@@ -281,7 +296,6 @@ foreach ($Source in $Sources) {
 }
 
 Write-Host "<-- Done Unpacking`n" -ForegroundColor $ColorNotice
-
 
 # Normalize directory names
 
