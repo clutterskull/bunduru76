@@ -155,13 +155,21 @@ function GetConfirmation()
     return $Response -eq 0
 }
 
+function NormalizePath($Path)
+{
+    # Some commands hate having the backslash right before a end-quote
+    # In particular Archive2 has an internal bug that will cause an exception if a path
+    # has spaces, is quoted, and ends with a double-quote
+    return "$(Resolve-Path $Path)".Trim('\')
+}
+
 function ResolvePathOrFail($Path)
 {
     if (Test-Path -Path $Path) {
-        return Resolve-Path $Path
+        return NormalizePath $Path
     }
     else {
-        throw ''
+        throw "Path does not exist: `"$Path`""
     }
 }
 
@@ -226,7 +234,7 @@ try {
 
 try {
     $Game = ResolvePathOrFail $Game
-    $Data = ResolvePathOrFail "$Game\Data\"
+    $Data = ResolvePathOrFail "$Game\Data"
 } catch {
     Write-Host "Fallout 76 Data folder does not appear to be valid, please check your paths."
     Exit 1
@@ -258,11 +266,7 @@ Write-Host ""
 
 Remove-Item -ErrorAction Ignore -Recurse -Force $Unpacked | Out-String | Write-Verbose
 New-Item -ItemType Directory -Force -Path $Unpacked | Out-String | Write-Verbose
-
-# Archive2 will throw a fit if extract or root paths are not normalized
-# Also will throw a fit if there is a trailing backslash in a path that contains spaces because
-# it will internally qupte and the backslash will cause the closing quote to become a literal
-$Unpacked = "$(Resolve-Path $Unpacked)".Trim('\')
+$Unpacked = NormalizePath $Unpacked
 
 
 # Loop through each source, look for special directories or ba2, put them all in the staging folder
@@ -347,7 +351,7 @@ foreach ($Source in $Sources) {
 }
 
 # Give Archive2 a double-quoted list of directories to add, minus strings and textures
-$Sources = '"{0}"' -f ($Sources -join '","')
+$Sources = ($Sources | ForEach-Object { '"' + (NormalizePath $_) + '"' }) -join ','
 & $Archive2 $Sources -create="$Bundle" -root="$Unpacked" -format=General | Out-String | Write-Verbose
 
 Write-Host "<-- Done Packing`n" -ForegroundColor $ColorNotice
@@ -379,17 +383,17 @@ if ($Save) {
         $File = Resolve-Path "$PSScriptRoot\$($MyInvocation.MyCommand.Name)"
         $Arguments = @(
             "-ExecutionPolicy Bypass",
-            "-File $File",
-            "-Archive2 $Archive2Path",
-            "-Mods $Mods",
-            "-Game $Game",
+            "-File `"$File`"",
+            "-Archive2 `"$Archive2Path`"",
+            "-Mods `"$Mods`"",
+            "-Game `"$Game`"",
             $(if ($Clean) {'-Clean'} else {''})
         ) -join ' '
     } else {
         $Arguments = @(
-            "-Archive2 $Archive2Path",
-            "-Mods $Mods",
-            "-Game $Game",
+            "-Archive2 `"$Archive2Path`"",
+            "-Mods `"$Mods`"",
+            "-Game `"$Game`"",
             $(if ($Clean) {'-Clean'} else {''})
         ) -join ' '
     }
